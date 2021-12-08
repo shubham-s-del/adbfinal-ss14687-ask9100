@@ -14,7 +14,9 @@ import static com.nyu.adb.transaction.TransactionStatus.ABORT;
  */
 public class DeadlockDetectorUtil {
 
-    public static boolean detectCycle(Set<Integer> visited, Transaction currentTransaction, Transaction startingTransaction, Map<Integer, List<Integer>> waitsForGraph, Transactions transactions) {
+    public static boolean detectCycle(Set<Integer> visited, Transaction currentTransaction,
+                                      Transaction startingTransaction, Map<Integer, List<Integer>> waitsForGraph,
+                                      Transactions transactions) {
         visited.add(currentTransaction.getTransactionId());
         List<Integer> connectedTransactions = waitsForGraph.getOrDefault(currentTransaction.getTransactionId(),
                 new LinkedList<>());
@@ -30,7 +32,8 @@ public class DeadlockDetectorUtil {
         return false;
     }
 
-    public static Optional<Transaction> findYoungestDeadlockedTransaction(Map<Integer, List<Integer>> waitsForGraph, Transactions transactions) {
+    public static Optional<Transaction> findYoungestDeadlockedTransaction(Map<Integer, List<Integer>> waitsForGraph,
+                                                                          Transactions transactions) {
         Transaction youngestTransaction = null;
         for (Integer currentTransactionId : waitsForGraph.keySet()) {
             Transaction currentTransaction = transactions.getTransactionOrThrowException(currentTransactionId);
@@ -46,8 +49,10 @@ public class DeadlockDetectorUtil {
         return Optional.ofNullable(youngestTransaction);
     }
 
-    public static void detectDeadlock(Map<Integer, List<Integer>> waitsForGraph, Transactions transactions, TransactionManager transactionManager) {
-        Optional<Transaction> abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
+    public static void detectDeadlock(Map<Integer, List<Integer>> waitsForGraph, Transactions transactions,
+                                      TransactionManager transactionManager) {
+        Optional<Transaction> abortTransaction =
+                DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
         while (abortTransaction.isPresent()) {
             Transaction transaction = abortTransaction.get();
             transaction.setTransactionStatus(ABORT);

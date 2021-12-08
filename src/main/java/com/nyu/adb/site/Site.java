@@ -55,7 +55,7 @@ public class Site {
         for (Integer variable : availableForRead.keySet()) {
             availableForRead.put(variable, false);
         }
-        OutputWriter.getInstance().printMessageToConsoleAndLogFile("Site" + siteId + " failed!");
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile("Failed site - " + siteId);
         if (!abortTransactions.isEmpty()) {
             OutputWriter.getInstance().printMessageToConsoleAndLogFile(abortTransactions.toString() + " will abort.");
         }

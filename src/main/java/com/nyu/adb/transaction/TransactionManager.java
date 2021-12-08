@@ -393,7 +393,8 @@ public class TransactionManager {
         if (!waitingList.contains(transaction.getTransactionId())) {
             waitingList.add(transaction.getTransactionId());
             waitsForGraph.put(waitsFor.getTransactionId(), waitingList);
-            OutputWriter.getInstance().printMessageToConsoleAndLogFile("T" + transaction.getTransactionId() + " waits for T" + waitsFor.getTransactionId() + " for x" + variable
+            OutputWriter.getInstance().printMessageToConsoleAndLogFile("T" + transaction.getTransactionId()
+                    + " waits for T" + waitsFor.getTransactionId() + " for x" + variable
                     + (Objects.isNull(site) ? " because of write waiting" : " at site" + site.getSiteId()));
         }
     }
