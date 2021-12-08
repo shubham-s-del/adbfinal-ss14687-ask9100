@@ -28,7 +28,7 @@ public class TransactionManager {
     //transactionId -> List<transactionIds>
     private Map<Integer, List<Integer>> waitsForGraph;
     //transactionId -> List<Site>
-    private Map<Integer, List<Site>> waitingSites;
+    private Map<Integer, List<Site>> transactionsWaitingOnSites;
     //variable -> List<Operation>
     private Map<Integer, LinkedList<TransactionOperation>> waitingOperations;
 
@@ -37,12 +37,16 @@ public class TransactionManager {
 
     public TransactionManager() {
         currentTimestamp = 0;
+        initLocalState();
+        initSitesAndVariables();
+    }
+
+    private void initLocalState() {
         transactions = new Transactions();
         sites = new ArrayList<>();
         waitsForGraph = new HashMap<>();
-        waitingSites = new HashMap<>();
+        transactionsWaitingOnSites = new HashMap<>();
         waitingOperations = new HashMap<>();
-        initSitesAndVariables();
     }
 
     private void initSitesAndVariables() {
@@ -89,7 +93,7 @@ public class TransactionManager {
             case RECOVER:
                 Site site = sites.get(transactionOperation.getSiteId());
                 site.recoverSite();
-                wakeupTransactionsWaitingForSite(site);
+                resumeTransactionsWaitingForSite(site);
                 break;
         }
     }
@@ -131,7 +135,7 @@ public class TransactionManager {
                 toSkip--;
                 continue;
             }
-            wakeupTransactionsWaitingForSite(site);
+            resumeTransactionsWaitingForSite(site);
         }
         resumeTransactionsWaitingForVariables(variablesHeldByTransaction);
     }
@@ -252,7 +256,7 @@ public class TransactionManager {
     protected boolean checkWriteStarvation(Transaction transaction, Integer variable, TransactionOperation transactionOperation, boolean isNewReadOrWrite) {
         if (!isNewReadOrWrite || !hasWriteWaiting(transactionOperation, variable)) return true;
         addWaitsForWaitingWrite(transaction, transactionOperation, variable);
-        addWaitingOperation(variable, transactionOperation);
+        addWaitingTransactionOperation(variable, transactionOperation);
         DeadlockDetectorUtil.detectDeadlock(waitsForGraph, transactions, this);
         return false;
     }
@@ -364,36 +368,26 @@ public class TransactionManager {
 
     protected void addWaitingSite(Transaction transaction, Site site) {
         if (Objects.nonNull(site)) {
-            List<Site> waitingSitesForTransaction = waitingSites.getOrDefault(transaction.getTransactionId(), new ArrayList<>());
+            List<Site> waitingSitesForTransaction = transactionsWaitingOnSites.getOrDefault(transaction.getTransactionId(), new ArrayList<>());
             waitingSitesForTransaction.add(site);
-            waitingSites.put(transaction.getTransactionId(), waitingSitesForTransaction);
+            transactionsWaitingOnSites.put(transaction.getTransactionId(), waitingSitesForTransaction);
             OutputWriter.getInstance().printMessageToConsoleAndLogFile("T" + transaction.getTransactionId() + " waits for Site" + site.getSiteId());
         }
     }
 
     private void blockRead(Transaction transaction, Site site, Integer variable, TransactionOperation transactionOperation) {
-        addWaitsForWriteLock(transaction, site, variable);
-        addWaitingOperation(variable, transactionOperation);
+        TransactionLockingUtil.transactionWaitsForWrite(transaction, site, variable, this);
+        addWaitingTransactionOperation(variable, transactionOperation);
     }
 
     private void blockWrite(Transaction transaction, Site site, Integer variable, TransactionOperation transactionOperation) {
-        addWaitsForWriteLock(transaction, site, variable);
-        addWaitsForReadLock(transaction, site, variable);
-        addWaitingOperation(variable, transactionOperation);
+        TransactionLockingUtil.transactionWaitsForWrite(transaction, site, variable, this);
+        TransactionLockingUtil.transactionWaitsForRead(transaction, site, variable, this);
+        addWaitingTransactionOperation(variable, transactionOperation);
     }
 
-    private void addWaitsForWriteLock(Transaction transaction, Site site, Integer variable) {
-        Optional<Transaction> waitsFor = site.getLockManager().waitsForWriteTransaction(variable);
-        waitsFor.ifPresent(waitsForTransaction -> addToWaitingTransactions(waitsForTransaction, transaction, site, variable));
-    }
 
-    private void addWaitsForReadLock(Transaction transaction, Site site, Integer variable) {
-        List<Transaction> waitsFor = site.getLockManager().waitsForReadTransaction(variable);
-        waitsFor.forEach(waitsForTransaction -> addToWaitingTransactions(waitsForTransaction, transaction, site, variable));
-    }
-
-    private void addToWaitingTransactions(Transaction waitsFor, Transaction transaction, Site site, Integer
-            variable) {
+    public void addToWaitingTransactions(Transaction waitsFor, Transaction transaction, Site site, Integer variable) {
         if (waitsFor.getTransactionId().equals(transaction.getTransactionId())) return;
         List<Integer> waitingList = waitsForGraph.getOrDefault(waitsFor.getTransactionId(), new ArrayList<>());
         if (!waitingList.contains(transaction.getTransactionId())) {
@@ -404,7 +398,7 @@ public class TransactionManager {
         }
     }
 
-    private void addWaitingOperation(Integer variable, TransactionOperation transactionOperation) {
+    private void addWaitingTransactionOperation(Integer variable, TransactionOperation transactionOperation) {
         if (Objects.nonNull(transactionOperation)) {
             LinkedList<TransactionOperation> transactionOperations = waitingOperations.getOrDefault(variable, new LinkedList<>());
             transactionOperations.add(transactionOperation);
@@ -412,8 +406,8 @@ public class TransactionManager {
         }
     }
 
-    protected void wakeupTransactionsWaitingForSite(Site site) {
-        waitingSites.forEach((transactionId, sites) -> {
+    protected void resumeTransactionsWaitingForSite(Site site) {
+        transactionsWaitingOnSites.forEach((transactionId, sites) -> {
             Transaction transaction = transactions.getTransactionOrThrowException(transactionId);
             TransactionOperation currentTransactionOperation = transaction.getCurrentOperation();
             if (READ.equals(currentTransactionOperation.getOperationType())) {
@@ -430,7 +424,7 @@ public class TransactionManager {
                 }
             } else throw new DatabaseException("T" + transactionId + " should not be waiting for sites!");
         });
-        waitingSites.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+        transactionsWaitingOnSites.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     protected void resumeTransactionsWaitingForVariables(Set<Integer> variables) {
