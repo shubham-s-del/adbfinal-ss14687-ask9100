@@ -1,6 +1,7 @@
 package com.nyu.adb.transaction;
 
 import com.nyu.adb.driver.DatabaseException;
+import com.nyu.adb.driver.OutputWriter;
 import com.nyu.adb.driver.VersionedValues;
 import com.nyu.adb.site.Site;
 import com.nyu.adb.util.Constants;
@@ -99,7 +100,7 @@ public class TransactionManager {
         if (getTransaction(transactionOperation.getTransactionId()).isPresent()) {
             throw new DatabaseException("Transaction with id: " + transactionOperation.getTransactionId() + " already exists!");
         }
-        FileUtils.log("Begin " + (isReadOnly ? "RO " : "") + "T" + transactionOperation.getTransactionId() + " at time: " + currentTimestamp);
+        OutputWriter.getInstance().log("Begin " + (isReadOnly ? "RO " : "") + "T" + transactionOperation.getTransactionId() + " at time: " + currentTimestamp);
         transactions.put(new Transaction(transactionOperation.getTransactionId(), currentTimestamp, transactionOperation, isReadOnly, ACTIVE));
     }
 
@@ -108,19 +109,19 @@ public class TransactionManager {
         Set<Integer> variablesHeldByTransaction = new LinkedHashSet<>();
 
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
-            FileUtils.log(String.format("T%d is already %s", transactionId, transaction.getTransactionStatus().name().toLowerCase()));
+            OutputWriter.getInstance().log(String.format("T%d is already %s", transactionId, transaction.getTransactionStatus().name().toLowerCase()));
             return;
         }
 
         transaction.setTransactionStatus(ACTIVE.equals(transaction.getTransactionStatus()) ? COMMITTED : ABORTED);
-        FileUtils.log("T" + transactionId + " " + transaction.getTransactionStatus().name().toLowerCase());
+        OutputWriter.getInstance().log("T" + transactionId + " " + transaction.getTransactionStatus().name().toLowerCase());
         for (Integer siteId = MIN_SITE_ID; siteId <= MAX_SITE_ID; siteId++) {
             Site site = sites.get(siteId);
             variablesHeldByTransaction.addAll(site.getLockManager().getAllVariablesHeldByTransaction(transaction));
             if (COMMITTED.equals(transaction.getTransactionStatus())) {
                 site.commitValues(transaction, currentTimestamp);
             } else {
-                site.moveCurrentValuesBackToCommitted(transaction, transaction.getTimestamp());
+                site.rollBackCurrentValueToLastCommitted(transaction, transaction.getTimestamp());
             }
             site.getLockManager().releaseLocksForTransaction(transaction);
         }
@@ -163,7 +164,7 @@ public class TransactionManager {
     protected void read(TransactionOperation transactionOperation, boolean isNewRead) {
         Transaction transaction = getTransactionOrThrowException(transactionOperation.getTransactionId());
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
-            FileUtils.log("Finished T" + transaction.getTransactionId() + " trying to read. Ignoring.");
+            OutputWriter.getInstance().log("Finished T" + transaction.getTransactionId() + " trying to read. Ignoring.");
             return;
         }
         Integer variable = transactionOperation.getVariable();
@@ -277,14 +278,14 @@ public class TransactionManager {
     }
 
     private void readVariable(Transaction transaction, Integer variable, Site site) {
-        Integer value = site.readValue(transaction, variable);
-        FileUtils.log("T" + transaction.getTransactionId() + ": read(x" + variable + ")=" + value + " at site" + site.getSiteId());
+        Integer value = site.executeRead(transaction, variable);
+        OutputWriter.getInstance().log("T" + transaction.getTransactionId() + ": read(x" + variable + ")=" + value + " at site" + site.getSiteId());
     }
 
     protected void write(TransactionOperation transactionOperation, boolean isNewWrite) {
         Transaction transaction = getTransactionOrThrowException(transactionOperation.getTransactionId());
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
-            FileUtils.log("Finished T " + transaction.getTransactionId() + " trying to write. Ignoring.");
+            OutputWriter.getInstance().log("Finished T " + transaction.getTransactionId() + " trying to write. Ignoring.");
             return;
         }
         Integer variable = transactionOperation.getVariable();
@@ -352,8 +353,8 @@ public class TransactionManager {
     }
 
     private void writeVariable(Transaction transaction, Integer variable, Integer writeValue, Site site) {
-        site.writeValue(transaction, variable, writeValue);
-        FileUtils.log("T" + transaction.getTransactionId() + ": write(x" + variable + ")=" + writeValue + " at site" + site.getSiteId());
+        site.executeWrite(transaction, variable, writeValue);
+        OutputWriter.getInstance().log("T" + transaction.getTransactionId() + ": write(x" + variable + ")=" + writeValue + " at site" + site.getSiteId());
     }
 
     protected void block(Transaction transaction, Site site, Integer variable, TransactionOperation transactionOperation) {
@@ -385,7 +386,7 @@ public class TransactionManager {
             List<Site> waitingSitesForTransaction = waitingSites.getOrDefault(transaction.getTransactionId(), new ArrayList<>());
             waitingSitesForTransaction.add(site);
             waitingSites.put(transaction.getTransactionId(), waitingSitesForTransaction);
-            FileUtils.log("T" + transaction.getTransactionId() + " waits for Site" + site.getSiteId());
+            OutputWriter.getInstance().log("T" + transaction.getTransactionId() + " waits for Site" + site.getSiteId());
         }
     }
 
@@ -417,7 +418,7 @@ public class TransactionManager {
         if (!waitingList.contains(transaction.getTransactionId())) {
             waitingList.add(transaction.getTransactionId());
             waitsForGraph.put(waitsFor.getTransactionId(), waitingList);
-            FileUtils.log("T" + transaction.getTransactionId() + " waits for T" + waitsFor.getTransactionId() + " for x" + variable
+            OutputWriter.getInstance().log("T" + transaction.getTransactionId() + " waits for T" + waitsFor.getTransactionId() + " for x" + variable
                     + (Objects.isNull(site) ? " because of write waiting" : " at site" + site.getSiteId()));
         }
     }
@@ -436,13 +437,13 @@ public class TransactionManager {
             TransactionOperation currentTransactionOperation = transaction.getCurrentOperation();
             if (READ.equals(currentTransactionOperation.getOperationType())) {
                 if (sites.contains(site) && site.isReadAllowed(currentTransactionOperation.getVariable())) {
-                    FileUtils.log("T" + transactionId + " woken up since site" + site.getSiteId() + " is up!");
+                    OutputWriter.getInstance().log("T" + transactionId + " woken up since site" + site.getSiteId() + " is up!");
                     read(currentTransactionOperation, true);
                     sites.clear();
                 }
             } else if (WRITE.equals(currentTransactionOperation.getOperationType())) {
                 if (sites.contains(site)) {
-                    FileUtils.log("T" + transactionId + " woken up since site" + site.getSiteId() + " is up!");
+                    OutputWriter.getInstance().log("T" + transactionId + " woken up since site" + site.getSiteId() + " is up!");
                     write(currentTransactionOperation, true);
                     sites.clear();
                 }
@@ -479,7 +480,7 @@ public class TransactionManager {
     }
 
     protected void dump() {
-        FileUtils.log(Constants.DUMP);
+        OutputWriter.getInstance().log(Constants.DUMP);
         long toSkip = MIN_SITE_ID;
         for (Site site : sites) {
             if (toSkip > 0) {
@@ -494,9 +495,9 @@ public class TransactionManager {
             });
             // Removing last comma
             sb.setLength(sb.length() - 1);
-            FileUtils.log(sb.toString());
+            OutputWriter.getInstance().log(sb.toString());
         }
-        FileUtils.log(Constants.ASTERISK_LINE);
+        OutputWriter.getInstance().log(Constants.ASTERISK_LINE);
     }
 
     private Optional<Transaction> findYoungestDeadlockedTransaction() {

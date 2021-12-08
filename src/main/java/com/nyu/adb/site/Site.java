@@ -40,13 +40,13 @@ public class Site {
             Integer key = entry.getKey();
             List<Transaction> transactions = entry.getValue();
             for (Transaction transaction : transactions) {
-                moveValueBackToCommittedValueAtTime(key, transaction.getTimestamp(), siteId);
+                rollbackToLastCommittedValue(key, transaction.getTimestamp(), siteId);
                 transaction.setTransactionStatus(TransactionStatus.ABORT);
                 abortTransactions.add("T" + transaction.getTransactionId());
             }
         }
         lockManager.getWriteLocks().forEach((variable, transaction) -> {
-                    moveValueBackToCommittedValueAtTime(variable, transaction.getTimestamp(), siteId);
+                    rollbackToLastCommittedValue(variable, transaction.getTimestamp(), siteId);
                     transaction.setTransactionStatus(TransactionStatus.ABORT);
                     abortTransactions.add("T" + transaction.getTransactionId());
                 }
@@ -55,8 +55,10 @@ public class Site {
         for (Integer variable : availableForRead.keySet()) {
             availableForRead.put(variable, false);
         }
-        FileUtils.log("Site" + siteId + " failed! All locks released!");
-        if (!abortTransactions.isEmpty()) FileUtils.log(abortTransactions.toString() + " will abort when they end");
+        OutputWriter.getInstance().log("Site" + siteId + " failed! All locks released!");
+        if (!abortTransactions.isEmpty()) {
+            OutputWriter.getInstance().log(abortTransactions.toString() + " will abort when they end");
+        }
     }
 
     public void recoverSite() {
@@ -64,10 +66,10 @@ public class Site {
         for (Integer variable : availableForRead.keySet()) {
             if (variable % 2 == 1) availableForRead.put(variable, true);
         }
-        FileUtils.log("Site" + siteId + " recovered!");
+        OutputWriter.getInstance().log("Site" + siteId + " recovered!");
     }
 
-    public Integer readValue(Transaction transaction, Integer variable) {
+    public Integer executeRead(Transaction transaction, Integer variable) {
         // Multi-version read consistency orchestrator
         if (!transaction.isReadOnly()) {
             lockManager.acquireReadLock(transaction, variable);
@@ -80,7 +82,7 @@ public class Site {
         return transaction.isReadOnly() ? versionedValues.getVersionedCommittedValues().floorEntry(transaction.getTimestamp()).getValue() : versionedValues.getCurrentValue();
     }
 
-    public void writeValue(Transaction transaction, Integer variable, Integer writeValue) {
+    public void executeWrite(Transaction transaction, Integer variable, Integer writeValue) {
         lockManager.acquireWriteLock(transaction, variable);
 
         if (!data.containsKey(variable)) {
@@ -97,10 +99,10 @@ public class Site {
         }
     }
 
-    public void moveCurrentValuesBackToCommitted(Transaction transaction, long currentTimestamp) {
+    public void rollBackCurrentValueToLastCommitted(Transaction transaction, long currentTimestamp) {
         Set<Integer> writeVariables = lockManager.getWriteVariablesHeldByTransaction(transaction);
         for (Integer writeVariable : writeVariables) {
-            moveValueBackToCommittedValueAtTime(writeVariable, currentTimestamp, siteId);
+            rollbackToLastCommittedValue(writeVariable, currentTimestamp, siteId);
         }
     }
 
@@ -133,17 +135,19 @@ public class Site {
         VersionedValues values = data.get(variable);
         values.insertNewCommittedValue(currentTimestamp, values.getCurrentValue());
         availableForRead.put(variable, true);
-        FileUtils.log(currentTimestamp + ": x" + variable + "=" + values.getCurrentValue() + " at site" + siteId);
+        OutputWriter.getInstance().log(currentTimestamp + ": x" + variable + "=" + values.getCurrentValue() + " at site" + siteId);
 
     }
 
-    protected void moveValueBackToCommittedValueAtTime(Integer variable, long timestamp, Integer siteId) {
+    protected void rollbackToLastCommittedValue(Integer variable, long timestamp, Integer siteId) {
         if (!data.containsKey(variable)) {
-            throw new DatabaseException("Invalid variable accessed in moveValueBackToCommittedValueAtTime!");
+            // should not be reachable.
+            // ignore
+            return;
         }
         VersionedValues values = data.get(variable);
         Integer committedValue = values.getVersionedCommittedValues().floorEntry(timestamp).getValue();
-        FileUtils.log("Rollback: x" + variable + "=" + values.getCurrentValue() + " to " + committedValue + " at site" + siteId);
+        OutputWriter.getInstance().log("Rollback: x" + variable + "=" + values.getCurrentValue() + " to " + committedValue + " at site" + siteId);
         values.setCurrentValue(committedValue);
     }
 

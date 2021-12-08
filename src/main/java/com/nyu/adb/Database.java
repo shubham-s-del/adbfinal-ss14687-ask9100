@@ -1,5 +1,6 @@
 package com.nyu.adb;
 
+import com.nyu.adb.driver.OutputWriter;
 import com.nyu.adb.transaction.TransactionOperation;
 import com.nyu.adb.transaction.TransactionManager;
 import com.nyu.adb.util.Constants;
@@ -10,7 +11,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 
-public class RepCRec {
+public class Database {
 
     public static void main(String[] args) {
         try {
@@ -28,18 +29,18 @@ public class RepCRec {
                 }
             }
         } catch (Exception exception) {
-            FileUtils.log(exception.getMessage());
+            OutputWriter.getInstance().log(exception.getMessage());
             System.err.println("Exception occurred in execution. Exception: ");
             exception.printStackTrace();
         }
     }
 
     public static void executeInputFile(File fileEntry) throws IOException {
-        FileUtils.createOutputFile(Constants.RESOURCE_DIR_PATH + "/output", fileEntry.getName() + "-output");
-        FileUtils.log(Constants.INPUT_FILE);
+        OutputWriter.getInstance().createOutputFile(Constants.RESOURCE_DIR_PATH + "/output", fileEntry.getName() + "-output");
+        OutputWriter.getInstance().log(Constants.INPUT_FILE);
         List<TransactionOperation> transactionOperations = FileUtils.parseFile(fileEntry.getPath());
         executeOperations(transactionOperations);
-        FileUtils.log(Constants.ASTERISK_LINE);
+        OutputWriter.getInstance().log(Constants.ASTERISK_LINE);
     }
 
     private static void executeOperations(List<TransactionOperation> transactionOperations) {
