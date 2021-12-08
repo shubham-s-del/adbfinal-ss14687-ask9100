@@ -4,7 +4,7 @@ import com.nyu.adb.driver.OutputWriter;
 import com.nyu.adb.transaction.TransactionOperation;
 import com.nyu.adb.transaction.TransactionManager;
 import com.nyu.adb.util.Constants;
-import com.nyu.adb.util.FileUtils;
+import com.nyu.adb.util.InputUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +38,7 @@ public class Database {
     public static void executeInputFile(File fileEntry) throws IOException {
         OutputWriter.getInstance().createOutputFile(Constants.RESOURCE_DIR_PATH + "/output", fileEntry.getName() + "-output");
         OutputWriter.getInstance().log(Constants.INPUT_FILE);
-        List<TransactionOperation> transactionOperations = FileUtils.parseFile(fileEntry.getPath());
+        List<TransactionOperation> transactionOperations = InputUtils.parseFile(fileEntry.getPath());
         executeOperations(transactionOperations);
         OutputWriter.getInstance().log(Constants.ASTERISK_LINE);
     }

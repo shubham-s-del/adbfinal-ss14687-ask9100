@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 
 import static com.nyu.adb.transaction.OperationType.*;
 
-public class FileUtils {
+public class InputUtils {
 
     public static List<TransactionOperation> parseFile(String inputFile) throws IOException {
         if (inputFile == null || inputFile.isEmpty()) {
@@ -20,7 +20,7 @@ public class FileUtils {
 
         List<String> allLines = Files.readAllLines(Paths.get(inputFile));
         return allLines.stream().filter(line -> !line.isEmpty() && !line.startsWith(Constants.COMMENT))
-                .map(FileUtils::getOperation).collect(Collectors.toList());
+                .map(InputUtils::getOperation).collect(Collectors.toList());
     }
 
     private static TransactionOperation getOperation(String operationString) {
@@ -54,7 +54,7 @@ public class FileUtils {
             transactionOperation.setVariable(getId(components[2]));
             transactionOperation.setWriteValue(getIntegerFromString(components[3]));
         } else {
-            OutputWriter.getInstance().log("Unsupported Operation: " + operationType);
+            OutputWriter.getInstance().printErrorLine("Unsupported Operation: " + operationType);
             throw new UnsupportedOperationException("This operation is not supported");
         }
         return transactionOperation;

@@ -3,7 +3,6 @@ package com.nyu.adb.site;
 import com.nyu.adb.driver.*;
 import com.nyu.adb.transaction.Transaction;
 import com.nyu.adb.transaction.TransactionStatus;
-import com.nyu.adb.util.FileUtils;
 
 import java.util.*;
 
