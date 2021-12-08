@@ -29,7 +29,7 @@ public class Database {
                 }
             }
         } catch (Exception exception) {
-            OutputWriter.getInstance().log(exception.getMessage());
+            OutputWriter.getInstance().printMessageToConsoleAndLogFile(exception.getMessage());
             System.err.println("Exception occurred in execution. Exception: ");
             exception.printStackTrace();
         }
@@ -37,10 +37,12 @@ public class Database {
 
     public static void executeInputFile(File fileEntry) throws IOException {
         OutputWriter.getInstance().createOutputFile(Constants.RESOURCE_DIR_PATH + "/output", fileEntry.getName() + "-output");
-        OutputWriter.getInstance().log(Constants.INPUT_FILE);
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile(Constants.INPUT_FILE);
         List<TransactionOperation> transactionOperations = InputUtils.parseFile(fileEntry.getPath());
         executeOperations(transactionOperations);
-        OutputWriter.getInstance().log(Constants.ASTERISK_LINE);
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile(
+                "\n"
+        );
     }
 
     private static void executeOperations(List<TransactionOperation> transactionOperations) {

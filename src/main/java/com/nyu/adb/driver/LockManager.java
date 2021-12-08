@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
  * @author shubham.srivastava
  * netId: ss14687
  */
-public class LockManager {
+public class LockManager implements LockManagerInterface {
 
     private Map<Integer, List<Transaction>> readLocks;
     private Map<Integer, Transaction> writeLocks;

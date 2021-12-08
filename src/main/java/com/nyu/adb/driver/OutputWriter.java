@@ -46,14 +46,14 @@ public class OutputWriter {
         if (Files.exists(Paths.get(outputFile))) file.delete();
     }
 
-    public void log(String message) {
+    public void printMessageToConsoleAndLogFile(String message) {
         instance.printDebugLine(message);
         try (FileWriter fw = new FileWriter(outputFile, true);
              BufferedWriter bw = new BufferedWriter(fw);
              PrintWriter out = new PrintWriter(bw)) {
             out.println(message);
         } catch (IOException ioException) {
-            System.err.println("Exception while writing into file: " + outputFile + "Exception: ");
+            instance.printErrorLine("Exception while writing into file: " + outputFile + "Exception: ");
             ioException.printStackTrace();
         }
     }

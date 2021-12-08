@@ -17,7 +17,7 @@ public class Site {
 
     private Integer siteId;
     private boolean failed;
-    private LockManager lockManager;
+    private LockManagerInterface lockManager;
 
     public Site(int id) {
         data = new TreeMap<>();
@@ -44,19 +44,20 @@ public class Site {
                 abortTransactions.add("T" + transaction.getTransactionId());
             }
         }
-        lockManager.getWriteLocks().forEach((variable, transaction) -> {
-                    rollbackToLastCommittedValue(variable, transaction.getTimestamp(), siteId);
-                    transaction.setTransactionStatus(TransactionStatus.ABORT);
-                    abortTransactions.add("T" + transaction.getTransactionId());
-                }
-        );
+        for (Map.Entry<Integer, Transaction> entry : lockManager.getWriteLocks().entrySet()) {
+            Integer key = entry.getKey();
+            Transaction transaction = entry.getValue();
+            rollbackToLastCommittedValue(key, transaction.getTimestamp(), siteId);
+            transaction.setTransactionStatus(TransactionStatus.ABORT);
+            abortTransactions.add("T" + transaction.getTransactionId());
+        }
         lockManager.clearAllLocks();
         for (Integer variable : availableForRead.keySet()) {
             availableForRead.put(variable, false);
         }
-        OutputWriter.getInstance().log("Site" + siteId + " failed! All locks released!");
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile("Site" + siteId + " failed!");
         if (!abortTransactions.isEmpty()) {
-            OutputWriter.getInstance().log(abortTransactions.toString() + " will abort when they end");
+            OutputWriter.getInstance().printMessageToConsoleAndLogFile(abortTransactions.toString() + " will abort.");
         }
     }
 
@@ -65,7 +66,7 @@ public class Site {
         for (Integer variable : availableForRead.keySet()) {
             if (variable % 2 == 1) availableForRead.put(variable, true);
         }
-        OutputWriter.getInstance().log("Site" + siteId + " recovered!");
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile("Recovered Site " + siteId );
     }
 
     public Integer executeRead(Transaction transaction, Integer variable) {
@@ -117,7 +118,7 @@ public class Site {
         return !failed;
     }
 
-    public LockManager getLockManager() {
+    public LockManagerInterface getLockManager() {
         return lockManager;
     }
 
@@ -134,7 +135,7 @@ public class Site {
         VersionedValues values = data.get(variable);
         values.insertNewCommittedValue(currentTimestamp, values.getCurrentValue());
         availableForRead.put(variable, true);
-        OutputWriter.getInstance().log(currentTimestamp + ": x" + variable + "=" + values.getCurrentValue() + " at site" + siteId);
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile(currentTimestamp + ": x" + variable + "=" + values.getCurrentValue() + " at site" + siteId);
 
     }
 
@@ -146,7 +147,7 @@ public class Site {
         }
         VersionedValues values = data.get(variable);
         Integer committedValue = values.getVersionedCommittedValues().floorEntry(timestamp).getValue();
-        OutputWriter.getInstance().log("Rollback: x" + variable + "=" + values.getCurrentValue() + " to " + committedValue + " at site" + siteId);
+        OutputWriter.getInstance().printMessageToConsoleAndLogFile("Rollback: x" + variable + "=" + values.getCurrentValue() + " to " + committedValue + " at site" + siteId);
         values.setCurrentValue(committedValue);
     }
 
