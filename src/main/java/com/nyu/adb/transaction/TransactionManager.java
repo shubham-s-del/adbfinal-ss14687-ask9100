@@ -12,7 +12,6 @@ import static com.nyu.adb.bookkeeper.Bookkeeper.getSiteIdForOddVariable;
 import static com.nyu.adb.bookkeeper.Bookkeeper.isOddVariable;
 import static com.nyu.adb.bookkeeper.DataInitHelper.addVariableAtAllSites;
 import static com.nyu.adb.bookkeeper.DataInitHelper.addVariableAtSite;
-import static com.nyu.adb.deadlock.DeadlockDetectorUtil.detectCycle;
 import static com.nyu.adb.transaction.OperationType.READ;
 import static com.nyu.adb.transaction.OperationType.WRITE;
 import static com.nyu.adb.transaction.TransactionStatus.*;
@@ -62,7 +61,6 @@ public class TransactionManager {
         }
     }
 
-    
 
     public void executeOperation(TransactionOperation transactionOperation) {
         currentTimestamp++;
@@ -104,7 +102,7 @@ public class TransactionManager {
         transactions.put(new Transaction(transactionOperation.getTransactionId(), currentTimestamp, transactionOperation, isReadOnly, ACTIVE));
     }
 
-    protected void endTransaction(Integer transactionId) {
+    public void endTransaction(Integer transactionId) {
         Transaction transaction = transactions.getTransactionOrThrowException(transactionId);
         Set<Integer> variablesHeldByTransaction = new LinkedHashSet<>();
 
@@ -152,7 +150,6 @@ public class TransactionManager {
         waitingOperations.forEach((variable, operations) -> operations.removeIf(operation -> operation.getTransactionId().equals(transaction.getTransactionId())));
         waitingOperations.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
-
 
 
     protected void read(TransactionOperation transactionOperation, boolean isNewRead) {
@@ -256,7 +253,7 @@ public class TransactionManager {
         if (!isNewReadOrWrite || !hasWriteWaiting(transactionOperation, variable)) return true;
         addWaitsForWaitingWrite(transaction, transactionOperation, variable);
         addWaitingOperation(variable, transactionOperation);
-        detectDeadlock();
+        DeadlockDetectorUtil.detectDeadlock(waitsForGraph, transactions, this);
         return false;
     }
 
@@ -361,17 +358,7 @@ public class TransactionManager {
         } else if (transactionOperation.getOperationType().equals(WRITE)) {
             blockWrite(transaction, site, variable, transactionOperation);
         }
-        detectDeadlock();
-    }
-
-    private void detectDeadlock() {
-        Optional<Transaction> abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
-        while (abortTransaction.isPresent()) {
-            Transaction transaction = abortTransaction.get();
-            transaction.setTransactionStatus(ABORT);
-            endTransaction(transaction.getTransactionId());
-            abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
-        }
+        DeadlockDetectorUtil.detectDeadlock(waitsForGraph, transactions, this);
     }
 
 

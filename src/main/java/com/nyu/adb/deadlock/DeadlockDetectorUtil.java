@@ -1,9 +1,12 @@
 package com.nyu.adb.deadlock;
 
 import com.nyu.adb.transaction.Transaction;
+import com.nyu.adb.transaction.TransactionManager;
 import com.nyu.adb.transaction.Transactions;
 
 import java.util.*;
+
+import static com.nyu.adb.transaction.TransactionStatus.ABORT;
 
 /**
  * @author shubham.srivastava
@@ -42,4 +45,15 @@ public class DeadlockDetectorUtil {
         }
         return Optional.ofNullable(youngestTransaction);
     }
+
+    public static void detectDeadlock(Map<Integer, List<Integer>> waitsForGraph, Transactions transactions, TransactionManager transactionManager) {
+        Optional<Transaction> abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
+        while (abortTransaction.isPresent()) {
+            Transaction transaction = abortTransaction.get();
+            transaction.setTransactionStatus(ABORT);
+            transactionManager.endTransaction(transaction.getTransactionId());
+            abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
+        }
+    }
+
 }
