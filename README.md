@@ -21,3 +21,13 @@ NetID: ask9100
 6. java -jar target/adbfinal-1.0-SNAPSHOT-jar-with-dependencies.jar src/main/resources/input/input-1
 
 Note that input-1 can be replaced by any input file name. 
+
+
+#Running using sourcecode
+1. Download code and cd into the repo (adbfinal-ss14687-ask9100)
+2. mvn clean compile assembly:single
+3. java -jar target/adbfinal-1.0-SNAPSHOT-jar-with-dependencies.jar src/main/resources/input/input-1
+
+Specify the input file as required. 
+
+Please contact us for help while running.
