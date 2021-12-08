@@ -207,16 +207,16 @@ public class TransactionManager {
         sites.stream().skip(SITES_START).forEach(site -> addWaitingSite(transaction, site));
     }
 
-    private boolean canRead(Transaction transaction, Integer variable) {
-        return isOddVariable(variable) ? canReadOddVariable(transaction, variable) : canReadEvenVariable(transaction, variable);
+    private boolean readPossible(Transaction transaction, Integer variable) {
+        return isOddVariable(variable) ? readOddVariablePossible(transaction, variable) : readEvenVariablePossible(transaction, variable);
     }
 
-    private boolean canReadOddVariable(Transaction transaction, Integer variable) {
+    private boolean readOddVariablePossible(Transaction transaction, Integer variable) {
         Site site = sites.get(getSiteIdForOddVariable(variable));
         return site.isReadAllowed(variable) && site.getLockManager().isReadAllowedForVariable(transaction, variable);
     }
 
-    private boolean canReadEvenVariable(Transaction transaction, Integer variable) {
+    private boolean readEvenVariablePossible(Transaction transaction, Integer variable) {
         for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
             if (site.isReadAllowed(variable) && site.getLockManager().isReadAllowedForVariable(transaction, variable)) {
@@ -228,7 +228,7 @@ public class TransactionManager {
 
     private void readOddVariable(Transaction transaction, Integer variable, TransactionOperation transactionOperation, boolean isNewRead) {
         Site site = sites.get(getSiteIdForOddVariable(variable));
-        if (canReadOddVariable(transaction, variable)) {
+        if (readOddVariablePossible(transaction, variable)) {
             if (checkWriteStarvation(transaction, variable, transactionOperation, isNewRead)) {
                 readVariable(transaction, variable, site);
             }
@@ -238,7 +238,7 @@ public class TransactionManager {
     }
 
     private void readEvenVariable(Transaction transaction, Integer variable, TransactionOperation transactionOperation, boolean isNewRead) {
-        if (!canReadEvenVariable(transaction, variable)) {
+        if (!readEvenVariablePossible(transaction, variable)) {
             sites.stream().skip(SITES_START).forEach(site -> block(transaction, site, variable, transactionOperation));
             return;
         }
@@ -294,7 +294,7 @@ public class TransactionManager {
 
     private void writeOddVariable(Transaction transaction, Integer variable, Integer writeValue, TransactionOperation transactionOperation, boolean isNewWrite) {
         Site site = sites.get(getSiteIdForOddVariable(variable));
-        if (canWriteOddVariable(transaction, variable)) {
+        if (writeOddVariablePossible(transaction, variable)) {
             if (checkWriteStarvation(transaction, variable, transactionOperation, isNewWrite)) {
                 writeVariable(transaction, variable, writeValue, site);
             }
@@ -304,7 +304,7 @@ public class TransactionManager {
     }
 
     private void writeEvenVariable(Transaction transaction, Integer variable, Integer writeValue, TransactionOperation transactionOperation, boolean isNewWrite) {
-        if (canWriteEvenVariable(transaction, variable)) {
+        if (writeEvenVariablePossible(transaction, variable)) {
             if (checkWriteStarvation(transaction, variable, transactionOperation, isNewWrite)) {
                 sites.stream().skip(SITES_START).filter(Site::checkStatus).forEach(site -> writeVariable(transaction, variable, writeValue, site));
             }
@@ -323,16 +323,16 @@ public class TransactionManager {
         }
     }
 
-    private boolean canWrite(Transaction transaction, Integer variable) {
-        return isOddVariable(variable) ? canWriteOddVariable(transaction, variable) : canWriteEvenVariable(transaction, variable);
+    private boolean writePossible(Transaction transaction, Integer variable) {
+        return isOddVariable(variable) ? writeOddVariablePossible(transaction, variable) : writeEvenVariablePossible(transaction, variable);
     }
 
-    private boolean canWriteOddVariable(Transaction transaction, Integer variable) {
+    private boolean writeOddVariablePossible(Transaction transaction, Integer variable) {
         Site site = sites.get(getSiteIdForOddVariable(variable));
         return site.checkStatus() && site.getLockManager().isWriteAllowedForVariable(transaction, variable);
     }
 
-    private boolean canWriteEvenVariable(Transaction transaction, Integer variable) {
+    private boolean writeEvenVariablePossible(Transaction transaction, Integer variable) {
         if (allSitesDown()) return false;
         for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
@@ -436,12 +436,12 @@ public class TransactionManager {
                     TransactionOperation transactionOperation = transactionOperations.getFirst();
                     Transaction transaction = transactions.getTransactionOrThrowException(transactionOperation.getTransactionId());
                     if (READ.equals(transactionOperation.getOperationType())) {
-                        if (canRead(transaction, variable)) {
+                        if (readPossible(transaction, variable)) {
                             read(transactionOperation, false);
                             transactionOperations.removeFirst();
                         } else canReadOrWrite = false;
                     } else if (WRITE.equals(transactionOperation.getOperationType())) {
-                        if (canWrite(transaction, variable)) {
+                        if (writePossible(transaction, variable)) {
                             write(transactionOperation, false);
                             transactionOperations.removeFirst();
                         } else canReadOrWrite = false;
