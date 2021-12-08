@@ -70,6 +70,9 @@ public class LockManager {
         return variables;
     }
 
+    public Set<Integer> getWriteVariablesHeldByTransaction(Transaction transaction) {
+        return writeLocks.entrySet().stream().filter(entry -> entry.getValue().equals(transaction)).map(Map.Entry::getKey).collect(Collectors.toSet());
+    }
 
     public Map<Integer, List<Transaction>> getReadLocks() {
         return readLocks;
