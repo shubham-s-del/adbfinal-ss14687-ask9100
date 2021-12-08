@@ -1,5 +1,7 @@
 package com.nyu.adb.transaction;
 
+import com.nyu.adb.driver.DatabaseException;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -20,7 +22,15 @@ public class Transactions {
         transactions.put(transaction.getTransactionId(), transaction);
     }
 
-    protected Optional<Transaction> get(Integer transactionId) {
+    public Optional<Transaction> get(Integer transactionId) {
         return Optional.ofNullable(transactions.get(transactionId));
+    }
+
+    public Transaction getTransactionOrThrowException(Integer transactionId) {
+        return getTransaction(transactionId).orElseThrow(() -> new DatabaseException("Transaction with id:" + transactionId + " not found"));
+    }
+
+    protected Optional<Transaction> getTransaction(Integer transactionId) {
+        return get(transactionId);
     }
 }

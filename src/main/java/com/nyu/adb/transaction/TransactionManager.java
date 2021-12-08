@@ -1,5 +1,6 @@
 package com.nyu.adb.transaction;
 
+import com.nyu.adb.deadlock.DeadlockDetectorUtil;
 import com.nyu.adb.driver.DatabaseException;
 import com.nyu.adb.driver.OutputWriter;
 import com.nyu.adb.driver.VersionedValues;
@@ -11,6 +12,7 @@ import static com.nyu.adb.bookkeeper.Bookkeeper.getSiteIdForOddVariable;
 import static com.nyu.adb.bookkeeper.Bookkeeper.isOddVariable;
 import static com.nyu.adb.bookkeeper.DataInitHelper.addVariableAtAllSites;
 import static com.nyu.adb.bookkeeper.DataInitHelper.addVariableAtSite;
+import static com.nyu.adb.deadlock.DeadlockDetectorUtil.detectCycle;
 import static com.nyu.adb.transaction.OperationType.READ;
 import static com.nyu.adb.transaction.OperationType.WRITE;
 import static com.nyu.adb.transaction.TransactionStatus.*;
@@ -95,7 +97,7 @@ public class TransactionManager {
     }
 
     protected void beginTransaction(TransactionOperation transactionOperation, boolean isReadOnly) {
-        if (getTransaction(transactionOperation.getTransactionId()).isPresent()) {
+        if (transactions.getTransaction(transactionOperation.getTransactionId()).isPresent()) {
             throw new DatabaseException("Transaction with id: " + transactionOperation.getTransactionId() + " already exists!");
         }
         OutputWriter.getInstance().printMessageToConsoleAndLogFile("Begin " + (isReadOnly ? "RO " : "") + "T" + transactionOperation.getTransactionId() + " at time: " + currentTimestamp);
@@ -103,7 +105,7 @@ public class TransactionManager {
     }
 
     protected void endTransaction(Integer transactionId) {
-        Transaction transaction = getTransactionOrThrowException(transactionId);
+        Transaction transaction = transactions.getTransactionOrThrowException(transactionId);
         Set<Integer> variablesHeldByTransaction = new LinkedHashSet<>();
 
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
@@ -151,16 +153,10 @@ public class TransactionManager {
         waitingOperations.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
-    private Transaction getTransactionOrThrowException(Integer transactionId) {
-        return getTransaction(transactionId).orElseThrow(() -> new DatabaseException("Transaction with id:" + transactionId + " not found"));
-    }
 
-    protected Optional<Transaction> getTransaction(Integer transactionId) {
-        return transactions.get(transactionId);
-    }
 
     protected void read(TransactionOperation transactionOperation, boolean isNewRead) {
-        Transaction transaction = getTransactionOrThrowException(transactionOperation.getTransactionId());
+        Transaction transaction = transactions.getTransactionOrThrowException(transactionOperation.getTransactionId());
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
             OutputWriter.getInstance().printMessageToConsoleAndLogFile("Finished T" + transaction.getTransactionId() + " trying to read. Ignoring.");
             return;
@@ -272,7 +268,7 @@ public class TransactionManager {
     private void addWaitsForWaitingWrite(Transaction transaction, TransactionOperation transactionOperation, Integer variable) {
         LinkedList<TransactionOperation> operationsInLine = waitingOperations.getOrDefault(variable, new LinkedList<>());
         Optional<TransactionOperation> waitsForOperation = operationsInLine.stream().filter(waitingOperation -> !waitingOperation.equals(transactionOperation) && WRITE.equals(waitingOperation.getOperationType())).findFirst();
-        waitsForOperation.ifPresent(waitsFor -> addToWaitingTransactions(getTransactionOrThrowException(waitsFor.getTransactionId()), transaction, null, variable));
+        waitsForOperation.ifPresent(waitsFor -> addToWaitingTransactions(transactions.getTransactionOrThrowException(waitsFor.getTransactionId()), transaction, null, variable));
     }
 
     private void readVariable(Transaction transaction, Integer variable, Site site) {
@@ -281,7 +277,7 @@ public class TransactionManager {
     }
 
     protected void write(TransactionOperation transactionOperation, boolean isNewWrite) {
-        Transaction transaction = getTransactionOrThrowException(transactionOperation.getTransactionId());
+        Transaction transaction = transactions.getTransactionOrThrowException(transactionOperation.getTransactionId());
         if (COMMITTED.equals(transaction.getTransactionStatus()) || ABORTED.equals(transaction.getTransactionStatus())) {
             OutputWriter.getInstance().printMessageToConsoleAndLogFile("Finished T " + transaction.getTransactionId() + " trying to write. Ignoring.");
             return;
@@ -369,12 +365,12 @@ public class TransactionManager {
     }
 
     private void detectDeadlock() {
-        Optional<Transaction> abortTransaction = findYoungestDeadlockedTransaction();
+        Optional<Transaction> abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
         while (abortTransaction.isPresent()) {
             Transaction transaction = abortTransaction.get();
             transaction.setTransactionStatus(ABORT);
             endTransaction(transaction.getTransactionId());
-            abortTransaction = findYoungestDeadlockedTransaction();
+            abortTransaction = DeadlockDetectorUtil.findYoungestDeadlockedTransaction(waitsForGraph, transactions);
         }
     }
 
@@ -431,7 +427,7 @@ public class TransactionManager {
 
     protected void wakeupTransactionsWaitingForSite(Site site) {
         waitingSites.forEach((transactionId, sites) -> {
-            Transaction transaction = getTransactionOrThrowException(transactionId);
+            Transaction transaction = transactions.getTransactionOrThrowException(transactionId);
             TransactionOperation currentTransactionOperation = transaction.getCurrentOperation();
             if (READ.equals(currentTransactionOperation.getOperationType())) {
                 if (sites.contains(site) && site.isReadAllowed(currentTransactionOperation.getVariable())) {
@@ -457,7 +453,7 @@ public class TransactionManager {
                 boolean canReadOrWrite = true;
                 while (!transactionOperations.isEmpty() && canReadOrWrite) {
                     TransactionOperation transactionOperation = transactionOperations.getFirst();
-                    Transaction transaction = getTransactionOrThrowException(transactionOperation.getTransactionId());
+                    Transaction transaction = transactions.getTransactionOrThrowException(transactionOperation.getTransactionId());
                     if (READ.equals(transactionOperation.getOperationType())) {
                         if (canRead(transaction, variable)) {
                             read(transactionOperation, false);
@@ -498,35 +494,5 @@ public class TransactionManager {
         OutputWriter.getInstance().printMessageToConsoleAndLogFile("\n");
     }
 
-    private Optional<Transaction> findYoungestDeadlockedTransaction() {
-        Transaction youngestTransaction = null;
-        for (Integer currentTransactionId : waitsForGraph.keySet()) {
-            Transaction currentTransaction = getTransactionOrThrowException(currentTransactionId);
-            Set<Integer> visited = new HashSet<>();
-            if (detectCycle(visited, currentTransaction, currentTransaction)) {
-                if (youngestTransaction == null) {
-                    youngestTransaction = currentTransaction;
-                } else if (currentTransaction.getTimestamp() > youngestTransaction.getTimestamp()) {
-                    youngestTransaction = currentTransaction;
-                }
-            }
-        }
-        return Optional.ofNullable(youngestTransaction);
-    }
 
-    private boolean detectCycle(Set<Integer> visited, Transaction currentTransaction, Transaction startingTransaction) {
-        visited.add(currentTransaction.getTransactionId());
-        List<Integer> connectedTransactions = waitsForGraph.getOrDefault(currentTransaction.getTransactionId(),
-                new LinkedList<>());
-        for (Integer nextTransactionId : connectedTransactions) {
-            if (nextTransactionId == startingTransaction.getTransactionId())
-                return true;
-            if (!visited.contains(nextTransactionId)) {
-                if (detectCycle(visited, transactions.get(nextTransactionId).get(), startingTransaction)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
 }
