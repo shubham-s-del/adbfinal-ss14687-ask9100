@@ -4,7 +4,6 @@ import com.nyu.adb.driver.DatabaseException;
 import com.nyu.adb.driver.OutputWriter;
 import com.nyu.adb.driver.VersionedValues;
 import com.nyu.adb.site.Site;
-import com.nyu.adb.util.Constants;
 
 import java.util.*;
 
@@ -32,8 +31,8 @@ public class TransactionManager {
     //variable -> List<Operation>
     private Map<Integer, LinkedList<TransactionOperation>> waitingOperations;
 
-    private static final Integer MIN_SITE_ID = 1;
-    private static final Integer MAX_SITE_ID = 10;
+    private static final Integer SITES_START = 1;
+    private static final Integer SITES_END = 10;
 
     public TransactionManager() {
         currentTimestamp = 0;
@@ -47,7 +46,7 @@ public class TransactionManager {
 
     private void initSitesAndVariables() {
         //Create 11 new sites, first one being the dummy site
-        for (int i = 0; i <= MAX_SITE_ID; i++) {
+        for (int i = 0; i <= SITES_END; i++) {
             sites.add(new Site(i));
         }
 
@@ -114,7 +113,7 @@ public class TransactionManager {
 
         transaction.setTransactionStatus(ACTIVE.equals(transaction.getTransactionStatus()) ? COMMITTED : ABORTED);
         OutputWriter.getInstance().printMessageToConsoleAndLogFile("T" + transactionId + " " + transaction.getTransactionStatus().name().toLowerCase());
-        for (Integer siteId = MIN_SITE_ID; siteId <= MAX_SITE_ID; siteId++) {
+        for (Integer siteId = SITES_START; siteId <= SITES_END; siteId++) {
             Site site = sites.get(siteId);
             variablesHeldByTransaction.addAll(site.getLockManager().getAllVariablesHeldByTransaction(transaction));
             if (COMMITTED.equals(transaction.getTransactionStatus())) {
@@ -126,7 +125,7 @@ public class TransactionManager {
         }
         removeFromWaitingTransactions(transaction);
         removeFromWaitingOperations(transaction);
-        long toSkip = MIN_SITE_ID;
+        long toSkip = SITES_START;
         for (Site site : sites) {
             if (toSkip > 0) {
                 toSkip--;
@@ -201,14 +200,14 @@ public class TransactionManager {
     }
 
     private void readOnlyTransactionEvenVariable(Transaction transaction, Integer variable) {
-        for (int i = MIN_SITE_ID; i <= MAX_SITE_ID; i++) {
+        for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
             if (site.isReadAllowed(variable)) {
                 readVariable(transaction, variable, site);
                 return;
             }
         }
-        sites.stream().skip(MIN_SITE_ID).forEach(site -> addWaitingSite(transaction, site));
+        sites.stream().skip(SITES_START).forEach(site -> addWaitingSite(transaction, site));
     }
 
     private boolean canRead(Transaction transaction, Integer variable) {
@@ -221,7 +220,7 @@ public class TransactionManager {
     }
 
     private boolean canReadEvenVariable(Transaction transaction, Integer variable) {
-        for (int i = MIN_SITE_ID; i <= MAX_SITE_ID; i++) {
+        for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
             if (site.isReadAllowed(variable) && site.getLockManager().isReadAllowedForVariable(transaction, variable)) {
                 return true;
@@ -243,10 +242,10 @@ public class TransactionManager {
 
     private void readEvenVariable(Transaction transaction, Integer variable, TransactionOperation transactionOperation, boolean isNewRead) {
         if (!canReadEvenVariable(transaction, variable)) {
-            sites.stream().skip(MIN_SITE_ID).forEach(site -> block(transaction, site, variable, transactionOperation));
+            sites.stream().skip(SITES_START).forEach(site -> block(transaction, site, variable, transactionOperation));
             return;
         }
-        for (int i = MIN_SITE_ID; i <= MAX_SITE_ID; i++) {
+        for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
             if (site.isReadAllowed(variable) && site.getLockManager().isReadAllowedForVariable(transaction, variable)) {
                 if (checkWriteStarvation(transaction, variable, transactionOperation, isNewRead)) {
@@ -310,13 +309,13 @@ public class TransactionManager {
     private void writeEvenVariable(Transaction transaction, Integer variable, Integer writeValue, TransactionOperation transactionOperation, boolean isNewWrite) {
         if (canWriteEvenVariable(transaction, variable)) {
             if (checkWriteStarvation(transaction, variable, transactionOperation, isNewWrite)) {
-                sites.stream().skip(MIN_SITE_ID).filter(Site::checkStatus).forEach(site -> writeVariable(transaction, variable, writeValue, site));
+                sites.stream().skip(SITES_START).filter(Site::checkStatus).forEach(site -> writeVariable(transaction, variable, writeValue, site));
             }
         } else {
             if (allSitesDown()) {
-                sites.stream().skip(MIN_SITE_ID).forEach(site -> addWaitingSite(transaction, site));
+                sites.stream().skip(SITES_START).forEach(site -> addWaitingSite(transaction, site));
             } else {
-                for (int i = MIN_SITE_ID; i <= MAX_SITE_ID; i++) {
+                for (int i = SITES_START; i <= SITES_END; i++) {
                     Site site = sites.get(i);
                     if (site.checkStatus() && !site.getLockManager().isWriteAllowedForVariable(transaction, variable)) {
                         block(transaction, site, variable, transactionOperation);
@@ -338,7 +337,7 @@ public class TransactionManager {
 
     private boolean canWriteEvenVariable(Transaction transaction, Integer variable) {
         if (allSitesDown()) return false;
-        for (int i = MIN_SITE_ID; i <= MAX_SITE_ID; i++) {
+        for (int i = SITES_START; i <= SITES_END; i++) {
             Site site = sites.get(i);
             if (site.checkStatus() && !site.getLockManager().isWriteAllowedForVariable(transaction, variable)) {
                 return false;
@@ -348,7 +347,7 @@ public class TransactionManager {
     }
 
     private boolean allSitesDown() {
-        return sites.stream().skip(MIN_SITE_ID).noneMatch(Site::checkStatus);
+        return sites.stream().skip(SITES_START).noneMatch(Site::checkStatus);
     }
 
     private void writeVariable(Transaction transaction, Integer variable, Integer writeValue, Site site) {
@@ -480,7 +479,7 @@ public class TransactionManager {
 
     protected void dump() {
         OutputWriter.getInstance().printMessageToConsoleAndLogFile("Dump--------------------------------------->");
-        long toSkip = MIN_SITE_ID;
+        long toSkip = SITES_START;
         for (Site site : sites) {
             if (toSkip > 0) {
                 toSkip--;
